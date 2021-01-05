@@ -1,6 +1,7 @@
 import tkinter as tk
+import numpy as np
 from functools import partial
-from copy import deepcopy
+from model import GameOverError, TileFlippedError, TileOutOfBoundsError
 
 class View(tk.Tk):
     def __init__(self, model):
@@ -10,9 +11,7 @@ class View(tk.Tk):
         self.bind("<Key>", self.handle_keypress)
 
         self.model = model
-        # A 2D array that stores all the buttons. Will be updated
-        # when the board is instantiated below.
-        self.button_array = deepcopy(self.model.board)
+        self.length, self.width = self.model.board.shape
 
         # Title
         title_frm = tk.Frame(master=self)
@@ -24,6 +23,11 @@ class View(tk.Tk):
         board_frm = tk.Frame(master=self)
         board_frm.pack()
 
+        # Grid of Buttons - A 2D array that stores all the buttons.
+        self.button_array = np.full((self.length, self.width),
+                                     None,
+                                     dtype=tk.Button)
+
         for i, row in enumerate(model.board):
             for j, tile in enumerate(row):
                 grid_frm = tk.Frame(master=board_frm)
@@ -32,6 +36,7 @@ class View(tk.Tk):
                 btn_callback = partial(self.flip_tile, i, j)
 
                 grid_btn = tk.Button(text="?",
+                                     height=3,
                                      width=5,
                                      master=grid_frm,
                                      command=btn_callback)
@@ -62,13 +67,28 @@ class View(tk.Tk):
                                   master=score_frm)
         self.score_lbl.pack(fill=tk.X, side=tk.TOP)
 
+        # Error indicator
+        error_frm = tk.Frame(master=self)
+        error_frm.pack()
+        self.error_lbl = tk.Label(text="", width=40, master=error_frm)
+        self.error_lbl.pack(fill=tk.X, side=tk.TOP)
+
     def flip_tile(self, i, j):
         """
         Callback function for Tkinter to update the state of the game
         and change the view of the buttons and score.
         """
         # Flip the tile in the model
-        self.model.flip_tile(i, j)
+        try:
+            self.model.flip_tile(i, j)
+        except GameOverError:
+            self.error_lbl["text"] = "The game has ended."
+        except TileFlippedError:
+            self.error_lbl["text"] = "This tile has already been flipped."
+        except TileOutOfBoundsError:
+            raise IndexError("Bad tile indices.")
+        else:
+            self.error_lbl["text"] = ""
         # Update the tile's text
         self.button_array[i][j]["text"] = self.model.describe_tile(i, j)
         # Update the score indicator

@@ -4,17 +4,17 @@ flipping mechanisms, game over, and points earned.
 """
 import math
 import random
+import numpy as np
 
-def reshape2D(array, length, width):
-    """
-    Reshapes a 1D Python list into a 2D one.
-    """
-    # Make sure there's enough elements
-    assert len(array) == length * width
+class GameOverError(Exception):
+    pass
 
-    reshaped = [array[n:(n + length)] for n in range(0, len(array), length)]
+class TileFlippedError(Exception):
+    pass
 
-    return reshaped
+class TileOutOfBoundsError(Exception):
+    pass
+
 
 def difficulty_to_tile_distribution(length, width, difficulty):
     """
@@ -38,14 +38,11 @@ def difficulty_to_tile_distribution(length, width, difficulty):
 
     return tile_distribution
 
-def generate_board(length, width, difficulty):
+def generate_board(length, width, tile_distribution):
     """
-    Takes a length and a width. Returns a 2D list that contains
-    0 for a voltorb, and 1/2/3 for their respective values.
+    Takes a length, width, and tile distribution. Returns a 2D numpy array
+    that contains 0 for a voltorb, and 1/2/3 for their respective values.
     """
-    total_tiles = length * width
-    tile_distribution = difficulty_to_tile_distribution(length, width, difficulty)
-
     board = []
 
     for i, num_tiles in enumerate(tile_distribution):
@@ -53,36 +50,19 @@ def generate_board(length, width, difficulty):
 
     random.shuffle(board)
 
-    return reshape2D(board, length, width)
+    return np.reshape(np.array(board), (length, width))
 
-def get_row_data(board):
-    """
-    Returns a list of tuples that contain the
-    total sum of the numbers in the row
-     and the number of voltorbs in a row
-    """
-    row_data = []
-
-    for row in board:
-        row_data.append(tuple([sum(row), row.count(0)]))
-
-    return row_data
-
-def get_col_data(board):
+def get_row_col_data(board, axis):
     """
     Returns a list of tuples that contain the
     total sum of the nubmers in the row
-    and the number of voltorbs in a column
+    and the number of voltorbs in the correct axis, where
+    0 is for the columns and 1 is the rows.
     """
-    col_data = []
+    col_sums = board.sum(axis=axis)
+    col_voltorbs = (board == 0).sum(axis=axis)
 
-    for col_num in range(len(board)):
-        # pretty inefficient to recreate columns, probably should use numpy
-        # arrays...
-        col = [board[row_num][col_num] for row_num in range(len(board[0]))]
-        col_data.append(tuple([sum(col), col.count(0)]))
-
-    return col_data
+    return list(zip(col_sums, col_voltorbs))
 
 def board_to_string(board):
     s = ""
@@ -100,13 +80,17 @@ class Model:
         self.length = length
         self.width = width
         self.difficulty = difficulty
-        self.board = generate_board(length, width, difficulty)
+        self.tile_distribution = difficulty_to_tile_distribution(length, width, difficulty)
+        # A better way to do this would be with logical indexing and numpy arrays...
+        # let's do that instead.
+        #self.multiplier_tiles = self.tile_distribution[2] + self.tile_distribution[3]
+        self.board = generate_board(length, width, self.tile_distribution)
 
         total_tiles = length * width
-        self.flipped = reshape2D([False] * total_tiles, length, width)
+        self.flipped = np.full((length, width), False)
 
-        self.row_data = get_row_data(self.board)
-        self.col_data = get_col_data(self.board)
+        self.row_data = get_row_col_data(self.board, 1)
+        self.col_data = get_row_col_data(self.board, 0)
 
         self.score = 0
         self.game_over = False
@@ -119,27 +103,30 @@ class Model:
         game over, and points earned when you flip.
         """
         if row >= self.length or row < 0 or col >= self.width or col < 0:
-            raise Exception("Played in a tile that does not exist on the board.")
+            raise TileOutOfBoundsError
 
         if self.flipped[row][col]:
-            raise Exception("This tile has already been flipped!")
+            raise TileFlippedError
 
         if self.game_over:
-            raise Exception("The game is over, you already lost!")
+            raise GameOverError
 
         flipped_tile_value = self.board[row][col]
         self.flipped[row][col] = True
 
-        if flipped_tile_value == 0:
-            self.game_over = True
+        remaining_tiles = self.board[~self.flipped]
+        twos_threes_remaining = 2 in remaining_tiles or 3 in remaining_tiles
 
-        if self.score == 0:
-            if self.game_over:
-                self.score = "YOU LOSE"
-            else:
-                self.score = flipped_tile_value
+        if flipped_tile_value == 0:
+            self.score = "YOU LOSE"
+            self.game_over = True
+        elif self.score == 0:
+            self.score = flipped_tile_value
         else:
             self.score *= flipped_tile_value
+            if not twos_threes_remaining:
+                self.score = "YOU WON"
+                self.game_over = True
 
     def describe_tile(self, row, col):
         """

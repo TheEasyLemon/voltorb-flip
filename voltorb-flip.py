@@ -2,7 +2,7 @@ from model import Model
 from view import View
 
 if __name__ == "__main__":
-    model = Model(10, 10, 3)
+    model = Model(5, 5, 0)
 
     view = View(model)
     view.mainloop()
